@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "d:/GitHub/Mock_intervue",
-      "program": "d:/GitHub/Mock_intervue/build/Debug/outDebug",
+      "cwd": "d:/GitHub/Mock_intervue/Секция_алгоритмы/209.minimum-size-subarray-sum",
+      "program": "d:/GitHub/Mock_intervue/Секция_алгоритмы/209.minimum-size-subarray-sum/build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [
