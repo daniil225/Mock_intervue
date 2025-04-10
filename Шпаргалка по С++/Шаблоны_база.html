@@ -74,6 +74,49 @@ b<span class="token punctuation">.</span><span class="token function">foo</span>
                 <span class="token punctuation">{</span>
                     <span class="token keyword keyword-return">return</span> lhs<span class="token punctuation">.</span><span class="token function">compare</span><span class="token punctuation">(</span>rhs<span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">;</span>
                 <span class="token punctuation">}</span>
+</code></pre><h2 id="проблема-конфликта-имен">Проблема конфликта имен </h2>
+<p>Начнем с описания проблемы, у нас есть <code>operator&lt;&lt;</code>, который может может находиться в лбом пространстве имен</p>
+<p>Допустим мы пишем <code>std::cout &lt;&lt; "Hello\n";</code> Это вполне может быть эквивалентно следующему: <code>operator&lt;&lt;(std::cout, "Hello\n");</code> И для того, что бы это работало, у нас оператор должен быть из пространства имен <code>std</code>: <code>std::operator&lt;&lt;(std::cout, "Hello\n");</code>, но компиятор не может об этом узнать из записи: <code>std::a &lt;&lt; b;</code></p>
+<p>Решением явлается Поиск Кенинга, которое заключается в следующем:</p>
+<ol>
+<li>Компилятор ищет имя функции из текущего и всех охватывающих пространств имен</li>
+<li>Если оно не найдено, компиялото ищет имя в пространствах имен ее аргументов</li>
+</ol>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-namespace">namespace</span> N <span class="token punctuation">{</span> <span class="token keyword keyword-struct">struct</span> <span class="token class-name">A</span><span class="token punctuation">;</span> <span class="token keyword keyword-int">int</span> <span class="token function">f</span><span class="token punctuation">(</span>A<span class="token operator">*</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+<span class="token keyword keyword-int">int</span> <span class="token function">g</span><span class="token punctuation">(</span>N<span class="token double-colon punctuation">::</span>A <span class="token operator">*</span>a<span class="token punctuation">)</span> <span class="token punctuation">{</span> <span class="token keyword keyword-int">int</span> i <span class="token operator">=</span> <span class="token function">f</span><span class="token punctuation">(</span>a<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token keyword keyword-return">return</span> i<span class="token punctuation">;</span> <span class="token punctuation">}</span>
+</code></pre><p>Однако у нас остались проблемы:</p>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-typedef">typedef</span> <span class="token keyword keyword-int">int</span> f<span class="token punctuation">;</span>
+<span class="token keyword keyword-namespace">namespace</span> N <span class="token punctuation">{</span> <span class="token keyword keyword-struct">struct</span> <span class="token class-name">A</span><span class="token punctuation">;</span> <span class="token keyword keyword-int">int</span> <span class="token function">f</span><span class="token punctuation">(</span>A<span class="token operator">*</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+<span class="token keyword keyword-int">int</span> <span class="token function">g</span><span class="token punctuation">(</span>N<span class="token double-colon punctuation">::</span>A <span class="token operator">*</span>a<span class="token punctuation">)</span> <span class="token punctuation">{</span> <span class="token keyword keyword-int">int</span> i <span class="token operator">=</span> <span class="token function">f</span><span class="token punctuation">(</span>a<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token keyword keyword-return">return</span> i<span class="token punctuation">;</span> <span class="token punctuation">}</span>
+</code></pre><p>В таком случае будет либо не определенное поведение, либо ошибка компиляции, если не будет противоречий</p>
+<h3 id="поиск-керирга-и-шаблоны">Поиск Керирга и Шаблоны </h3>
+<p>Следующий пример не работает:</p>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-namespace">namespace</span> N 
+<span class="token punctuation">{</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">A</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-int">int</span> <span class="token function">f</span><span class="token punctuation">(</span>A<span class="token operator">*</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword keyword-int">int</span> <span class="token function">g</span><span class="token punctuation">(</span>N<span class="token double-colon punctuation">::</span>A <span class="token operator">*</span>a<span class="token punctuation">)</span>
+<span class="token punctuation">{</span>
+    <span class="token keyword keyword-int">int</span> i <span class="token operator">=</span> <span class="token generic-function"><span class="token function">f</span><span class="token generic class-name"><span class="token operator">&lt;</span><span class="token keyword keyword-int">int</span><span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span>a<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-return">return</span> i<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre><p>Причиной явлается следующиее: старнности синтаксического анализа С++. Имя f не введено как имя шаблонной функции, поэтому компилятор предполагает, что это переменная, а треугольная скобка - сравнение на меньше.</p>
+<p>Тем не менее можно заставить работать этот код:</p>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-namespace">namespace</span> N 
+<span class="token punctuation">{</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">A</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-int">int</span> <span class="token function">f</span><span class="token punctuation">(</span>A<span class="token operator">*</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">f</span><span class="token punctuation">(</span><span class="token keyword keyword-int">int</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// неважно какой параметр </span>
+
+<span class="token keyword keyword-int">int</span> <span class="token function">g</span><span class="token punctuation">(</span>N<span class="token double-colon punctuation">::</span>A <span class="token operator">*</span>a<span class="token punctuation">)</span>
+<span class="token punctuation">{</span>
+    <span class="token keyword keyword-int">int</span> i <span class="token operator">=</span> <span class="token generic-function"><span class="token function">f</span><span class="token generic class-name"><span class="token operator">&lt;</span><span class="token keyword keyword-int">int</span><span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span>a<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// теперь все Ok</span>
+    <span class="token keyword keyword-return">return</span> i<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
 </code></pre><h1 id="шаблоны-функций">Шаблоны функций </h1>
 <h2 id="порождение-фукнции">Порождение фукнции </h2>
 <p>Рассмотрим простой пример:</p>
@@ -306,7 +349,276 @@ b<span class="token punctuation">.</span><span class="token function">foo</span>
 <span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T1</span><span class="token punctuation">,</span> <span class="token keyword keyword-typename">typename</span> <span class="token class-name">T2</span><span class="token operator">&gt;</span> <span class="token function">g</span><span class="token punctuation">(</span>T1<span class="token operator">*</span><span class="token punctuation">,</span> T2<span class="token operator">*</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 3</span>
 
 <span class="token function">g</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>t<span class="token punctuation">,</span> <span class="token operator">&amp;</span>s<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// FAIL</span>
-</code></pre><h1 id="шаблоны-классов">Шаблоны классов </h1>
+</code></pre><h2 id="специализация-фукнций">Специализация фукнций </h2>
+<p>Сигнатура специализированной функции обязана повторять сигнатуру общего шаблона и следовать за этими объявлениями в коде</p>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">foo</span><span class="token punctuation">(</span>T x<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">foo</span><span class="token punctuation">(</span><span class="token keyword keyword-int">int</span><span class="token operator">*</span> x<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// fail, ожидался int</span>
+</code></pre><p>Зато мы можем вовсе не указывать специализированный параметр, положившись на вывод типов:</p>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">foo</span><span class="token punctuation">(</span>T x<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">foo</span><span class="token punctuation">(</span><span class="token keyword keyword-int">int</span><span class="token operator">*</span> x<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// ok, T = int*</span>
+</code></pre><p>Частичная специализация для функиций невозможна</p>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">foo</span><span class="token punctuation">(</span>T x<span class="token punctuation">)</span><span class="token punctuation">;</span> 
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token generic-function"><span class="token function">foo</span><span class="token generic class-name"><span class="token operator">&lt;</span><span class="token keyword keyword-int">int</span><span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token keyword keyword-int">int</span> x<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// ok</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token generic-function"><span class="token function">foo</span><span class="token generic class-name"><span class="token operator">&lt;</span>T<span class="token operator">*</span><span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span>T<span class="token operator">*</span> x<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// fail </span>
+</code></pre><h3 id="трюк-саттера">Трюк Саттера </h3>
+<p>Однако, через специализацию классов, можно сэмитировать частичную специализацию фукнций</p>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-class">class</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-struct">struct</span> <span class="token class-name">FImpl</span><span class="token punctuation">;</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-class">class</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">f</span><span class="token punctuation">(</span>T t<span class="token punctuation">)</span> <span class="token punctuation">{</span> <span class="token class-name">FImpl</span><span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span><span class="token function">f</span><span class="token punctuation">(</span>t<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-class">class</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-struct">struct</span> <span class="token class-name">FImpl</span>
+<span class="token punctuation">{</span>
+    <span class="token keyword keyword-static">static</span> <span class="token keyword keyword-void">void</span> <span class="token function">f</span><span class="token punctuation">(</span>T t<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+</code></pre><p>Здесь используется то, что статический метод stateless класса мало отличается от свободной функции.</p>
+<h3 id="двусмысленность-в-выводе">Двусмысленность в выводе </h3>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">foo</span><span class="token punctuation">(</span>T<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">foo</span><span class="token punctuation">(</span>T<span class="token operator">*</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">foo</span><span class="token punctuation">(</span><span class="token keyword keyword-int">int</span><span class="token operator">*</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token keyword keyword-int">int</span> x<span class="token punctuation">;</span>
+<span class="token function">foo</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>x<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// вызовется [3], и это в целов хорошо</span>
+</code></pre><p>Вопрос является ли [3] специализацией для (2) или для (1) не имеет смысла. Они одинаково хорошо подходят для обоих, поэтому специализирует выйгравший шаблон.</p>
+<p>Здесь можно вспомнить по поляну и самцов оленя. Очевидно, что для <code>foo(int*)</code> более специальным явлается <code>foo(T*)</code> значит специализацией этого шаблона и будет 3-я функция, потому что она более специальная.</p>
+<h4 id="контрпример-димова-абрамса">Контрпример Димова-Абрамса </h4>
+<p>Но что делать, если на поляну уже пришел самец оленя и самка, а потом пришел более сильный сапец оленя???</p>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">foo</span><span class="token punctuation">(</span>T<span class="token punctuation">)</span><span class="token punctuation">;</span>  <span class="token comment">// 1</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">foo</span><span class="token punctuation">(</span><span class="token keyword keyword-int">int</span><span class="token operator">*</span><span class="token punctuation">)</span><span class="token punctuation">;</span>         <span class="token comment">// 2</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span>typeanme T<span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">foo</span><span class="token punctuation">(</span>T<span class="token operator">*</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 3</span>
+
+<span class="token keyword keyword-int">int</span> x<span class="token punctuation">;</span>
+<span class="token function">foo</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>x<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// Вызовется 3, хотя 2 подходит лучше</span>
+</code></pre><p>В данном случае <code>foo(int*)</code> уже связалась как специализация для более слабого самца оленя (шаблон <code>foo(T)</code>) и потом пришел более сильный самец оленя. Здесь так происходит потому что 2 уде выбрала, чья она специализация. Перегрузку выигрывает 3-ий вариант, а вот специализация уже связалась с 1 и не может быть выбрана.</p>
+<p>Важно помнить: специализация не учавствует в перегрузке. Сначала разрешается перегрузка, потом ищется наименее общая специализация (самая специфичная). Но в данном случае (2) не специализирует (3), так как встречается раньше.</p>
+<h3 id="а-теперь-контрольный-вопрос">А теперь контрольный вопрос </h3>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token punctuation">,</span> <span class="token keyword keyword-typename">typename</span> <span class="token class-name">U</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">foo</span><span class="token punctuation">(</span>T<span class="token punctuation">,</span> U<span class="token punctuation">)</span><span class="token punctuation">;</span>   <span class="token comment">// 1</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token punctuation">,</span> <span class="token keyword keyword-typename">typename</span> <span class="token class-name">U</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">foo</span><span class="token punctuation">(</span>T<span class="token operator">*</span><span class="token punctuation">,</span> U<span class="token operator">*</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 2</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token generic-function"><span class="token function">foo</span><span class="token generic class-name"><span class="token operator">&lt;</span><span class="token keyword keyword-int">int</span><span class="token operator">*</span><span class="token punctuation">,</span> <span class="token keyword keyword-int">int</span><span class="token operator">*</span><span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token keyword keyword-int">int</span><span class="token operator">*</span><span class="token punctuation">,</span> <span class="token keyword keyword-int">int</span><span class="token operator">*</span><span class="token punctuation">)</span><span class="token punctuation">;</span>       <span class="token comment">// 3</span>
+
+<span class="token keyword keyword-int">int</span> x<span class="token punctuation">;</span>
+<span class="token function">foo</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>x<span class="token punctuation">,</span> <span class="token operator">&amp;</span>x<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// Разумеется вызовется 2, так как 3 специализация для 1</span>
+
+</code></pre><h3 id="ограничения-для-std">Ограничения для std </h3>
+<p>Рассмотрим еще одно отличие: Допустим, мы хотим особую <code>std::swap</code> для нашего класса. Будем перегружать или специализировать?</p>
+<p>На самом деле тут нет выхода кроме как специализировать, так как прегружать функции из пространства имен <code>std</code> попросту нельзя, а вот специализировать можно.</p>
+<h1 id="шаблоны-классов">Шаблоны классов </h1>
+<p>Базу по шаблонам классов я писать не буду она очевидна, будут рассматривать не типичные на мой взгляд трюки и особенности</p>
+<h2 id="частичная-специализация">Частичная специализация </h2>
+<p>Здесь все так же как и для функций.</p>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-class">class</span> <span class="token class-name">Stack</span>
+<span class="token punctuation">{</span>
+ fwnode<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token operator">*</span> top_<span class="token punctuation">;</span>
+ <span class="token comment">// Все остальное в стеке для объектов типа T общего вида </span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token comment">// Для указателей храним массив указателей</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-class">class</span> <span class="token class-name">Stack</span><span class="token operator">&lt;</span>T<span class="token operator">*</span><span class="token operator">&gt;</span>
+<span class="token punctuation">{</span>
+    T<span class="token operator">*</span><span class="token operator">*</span> content_<span class="token punctuation">;</span>
+    <span class="token comment">// Все остальное в стеке для указателей</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+</code></pre><h3 id="пример-частичной-специализации">Пример частичной специализации: </h3>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token punctuation">,</span> <span class="token keyword keyword-typename">typename</span> <span class="token class-name">U</span><span class="token operator">&gt;</span> <span class="token keyword keyword-class">class</span> <span class="token class-name">Foo</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">;</span>          <span class="token comment">// 1</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-class">class</span> <span class="token class-name">Foo</span><span class="token operator">&lt;</span>T<span class="token punctuation">,</span> T<span class="token operator">&gt;</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">;</span>                <span class="token comment">// 2</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-class">class</span> <span class="token class-name">Foo</span><span class="token operator">&lt;</span>T<span class="token punctuation">,</span> <span class="token keyword keyword-int">int</span><span class="token operator">&gt;</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">;</span>              <span class="token comment">// 3</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token punctuation">,</span> <span class="token keyword keyword-typename">typename</span> <span class="token class-name">U</span><span class="token operator">&gt;</span> <span class="token keyword keyword-class">class</span> <span class="token class-name">Foo</span><span class="token operator">&lt;</span>T<span class="token operator">*</span><span class="token punctuation">,</span> U<span class="token operator">*</span><span class="token operator">&gt;</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">;</span>  <span class="token comment">// 4</span>
+
+Foo<span class="token operator">&lt;</span><span class="token keyword keyword-int">int</span><span class="token punctuation">,</span> <span class="token keyword keyword-float">float</span><span class="token operator">&gt;</span> mif<span class="token punctuation">;</span>   <span class="token comment">// 1</span>
+Foo<span class="token operator">&lt;</span><span class="token keyword keyword-float">float</span><span class="token punctuation">,</span> <span class="token keyword keyword-float">float</span><span class="token operator">&gt;</span> mif<span class="token punctuation">;</span> <span class="token comment">// 2</span>
+Foo<span class="token operator">&lt;</span><span class="token keyword keyword-float">float</span><span class="token punctuation">,</span> <span class="token keyword keyword-int">int</span><span class="token operator">&gt;</span> mif<span class="token punctuation">;</span>   <span class="token comment">// 3</span>
+Foo<span class="token operator">&lt;</span><span class="token keyword keyword-int">int</span><span class="token operator">*</span><span class="token punctuation">,</span> <span class="token keyword keyword-float">float</span><span class="token operator">*</span><span class="token operator">&gt;</span>mif<span class="token punctuation">;</span>  <span class="token comment">// 4</span>
+
+Foo<span class="token operator">&lt;</span><span class="token keyword keyword-int">int</span><span class="token punctuation">,</span> <span class="token keyword keyword-int">int</span><span class="token operator">&gt;</span>mif<span class="token punctuation">;</span> <span class="token comment">// Ambiguous partial specializations of 'Foo&lt;int, int&gt;'</span>
+</code></pre><h3 id="простая-задачка-на-специализацию">Простая задачка на специализацию </h3>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-class">class</span> <span class="token class-name">Stack</span>      <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">;</span> <span class="token comment">// 1</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-class">class</span> <span class="token class-name">Stack</span><span class="token operator">&lt;</span>T<span class="token operator">*</span><span class="token operator">&gt;</span>  <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">;</span> <span class="token comment">// 2</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-class">class</span> <span class="token class-name">Stack</span><span class="token operator">&lt;</span>T<span class="token operator">*</span><span class="token operator">*</span><span class="token operator">&gt;</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">;</span> <span class="token comment">// 3</span>
+
+Stack<span class="token operator">&lt;</span>Stack<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token operator">*</span><span class="token operator">&gt;</span> s1<span class="token punctuation">;</span>   <span class="token comment">// 2</span>
+Stack<span class="token operator">&lt;</span>Stack<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token operator">*</span><span class="token operator">*</span><span class="token operator">&gt;</span> s1<span class="token punctuation">;</span>  <span class="token comment">// 3</span>
+Stack<span class="token operator">&lt;</span>Stack<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token operator">*</span><span class="token operator">*</span><span class="token operator">*</span><span class="token operator">&gt;</span> s1<span class="token punctuation">;</span> <span class="token comment">// 3</span>
+</code></pre><p>Несмотря на то, что это не перегрузка, специализация выбирает из доступных специализаций наименее общую возможную.</p>
+<h2 id="ограничения-специализации">Ограничения специализации </h2>
+<ol>
+<li>Специализация всегда должна следовать за объявлением шаблона общего вида</li>
+</ol>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token operator">&gt;</span> <span class="token keyword keyword-class">class</span> <span class="token class-name">X</span><span class="token operator">&lt;</span><span class="token keyword keyword-int">int</span><span class="token operator">&gt;</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">;</span>      <span class="token comment">// ошибка</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-class">class</span> <span class="token class-name">X</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">;</span> <span class="token comment">// поздно</span>
+</code></pre><ol start="2">
+<li>Специализированный шаблон должен быть действительно менее общим, чем тот, версией которого он явлается</li>
+</ol>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-class">class</span> <span class="token class-name">X</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">U</span><span class="token operator">&gt;</span> <span class="token keyword keyword-class">class</span> <span class="token class-name">X</span><span class="token operator">&lt;</span>U<span class="token operator">&gt;</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">;</span> <span class="token comment">// fail</span>
+</code></pre><ol start="3">
+<li>Полная специализация возможна и для классов и для функций, наряду с перегрузкой</li>
+</ol>
+<h2 id="можно-ли-шаблонную-специализацию-назвать-разновидностью-наследования">Можно ли шаблонную специализацию назвать разновидностью наследования? </h2>
+<p>Увы нет. Так как происходит наружение LSP.</p>
+<h2 id="двухфазное-разрешение-имен">Двухфазное разрешение имен </h2>
+<ol>
+<li>Первая фаза: до инстанцирования. Шаблоны проходят общую синтаксическую проверку, а также разрешаются <strong>независимые</strong> имена.</li>
+<li>Втрорая фаза: во время инстанцирования. Происходит специальная синтаксическая проверка и разрешаются <strong>зависимые</strong> имена.</li>
+</ol>
+<p>Зависимое имя- это имя, которе семантически зависит от шаблонного параметра. Шаблонный параметр может быть его типом, он может учавствовать в формировании типа и так далее.</p>
+<blockquote>
+<p>Следует запомнить золотое правило: развершение зависимых имен откладывается до подстановки шаблонного параметра.</p>
+</blockquote>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-struct">struct</span> <span class="token class-name">Foo</span><span class="token punctuation">{</span>
+    <span class="token keyword keyword-int">int</span> <span class="token function">use</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span> <span class="token keyword keyword-return">return</span> T<span class="token double-colon punctuation">::</span>illegal_name<span class="token punctuation">;</span> <span class="token punctuation">}</span> <span class="token comment">// Зависимое имя, ок </span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+</code></pre><h3 id="контрольный-вопрос">Контрольный вопрос </h3>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">foo</span><span class="token punctuation">(</span>T<span class="token punctuation">)</span> <span class="token punctuation">{</span> cout <span class="token operator">&lt;&lt;</span> <span class="token string">"T"</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+
+<span class="token keyword keyword-struct">struct</span> <span class="token class-name">S</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">call_foo</span><span class="token punctuation">(</span>T t<span class="token punctuation">,</span> S x<span class="token punctuation">)</span><span class="token punctuation">{</span>
+    <span class="token function">foo</span><span class="token punctuation">(</span>x<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">foo</span><span class="token punctuation">(</span>t<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword keyword-void">void</span> <span class="token function">foo</span><span class="token punctuation">(</span>S<span class="token punctuation">)</span> <span class="token punctuation">{</span> cout <span class="token operator">&lt;&lt;</span> <span class="token string">"S"</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+
+<span class="token keyword keyword-int">int</span> <span class="token function">bar</span><span class="token punctuation">(</span>S x<span class="token punctuation">)</span>
+<span class="token punctuation">{</span>
+    <span class="token function">call_foo</span><span class="token punctuation">(</span>x<span class="token punctuation">,</span> x<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// Что выведется на экран???</span>
+<span class="token punctuation">}</span>
+</code></pre><p>Выведется TS Так сначала у нас связывается сначала связываются не зависимые параметры, то<br>
+Для foo(x) - тип S x известен при первом проходе, то будет вызываться шаблонная специализация<br>
+То есть печататься будет T, а вот уже в точке инстанцирования зависимый параметр будет связываться с то есть для foo(t) тип T = S и будет вызвана более специальная функция foo() c специальным параметром S</p>
+<blockquote>
+<p>В компиляторе MSVC до С++20 был баг с 2-х фазным разрешением имен</p>
+</blockquote>
+<h3 id="пример-вандерворда">Пример Вандерворда </h3>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-struct">struct</span> <span class="token class-name">Base</span> <span class="token punctuation">{</span>
+    <span class="token keyword keyword-void">void</span> <span class="token function">exit</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-struct">struct</span> <span class="token class-name">Derived</span><span class="token operator">:</span> <span class="token base-clause"><span class="token class-name">Base</span><span class="token operator">&lt;</span><span class="token class-name">T</span><span class="token operator">&gt;</span></span>
+<span class="token punctuation">{</span>
+    <span class="token keyword keyword-void">void</span> <span class="token function">foo</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{</span>
+        <span class="token function">exit</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// Можно подумать, что это Base::exit() но exit - не зависимое имя, так что нет</span>
+
+        <span class="token comment">// Но если сделать вот так:</span>
+        <span class="token keyword keyword-this">this</span><span class="token operator">-&gt;</span><span class="token function">exit</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// Мы сделаем exit зависимым именем, хотя параметр T там нигде явно не задействован, но семантически зависимость тут есть. </span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+</code></pre><p><code>this-&gt;</code> Это защита от 2-х фазного разрешения имен. Каждый раз, когда мы так пишем, мы откладываем разрешением имен на потом. И в общем случае для шаблонного класа <code>this-&gt;x</code> и <code>x</code> это разные вещи.</p>
+<h2 id="зависимые-имена-типов">Зависимые имена типов </h2>
+<p>Зависимые имена типов могут приводить к неожиданным результатам</p>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-struct">struct</span> <span class="token class-name">S</span>
+<span class="token punctuation">{</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">subtype</span><span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-int">int</span> <span class="token function">foo</span><span class="token punctuation">(</span><span class="token keyword keyword-const">const</span> T<span class="token operator">&amp;</span> x<span class="token punctuation">)</span>
+<span class="token punctuation">{</span>
+    T<span class="token double-colon punctuation">::</span>subtype <span class="token operator">*</span>y<span class="token punctuation">;</span>
+    <span class="token comment">// и так далее</span>
+<span class="token punctuation">}</span>
+
+<span class="token generic-function"><span class="token function">foo</span><span class="token generic class-name"><span class="token operator">&lt;</span>S<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span>S<span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// казалось бы все хорошо </span>
+</code></pre><p>По граматике языка ма предполагаем, что если что-то похоже на поле класса, то это поле класса</p>
+<p>Повиксить проблему можно так:</p>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-int">int</span> <span class="token function">foo</span><span class="token punctuation">(</span><span class="token keyword keyword-const">const</span> T<span class="token operator">&amp;</span> x<span class="token punctuation">)</span>
+<span class="token punctuation">{</span>
+    <span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token double-colon punctuation">::</span>subtype <span class="token operator">*</span>y<span class="token punctuation">;</span>
+    <span class="token comment">// и так далее</span>
+<span class="token punctuation">}</span>
+</code></pre><p>Эта техника называется устранением неоднозначности.</p>
+<p>Так же может быть следующая ситуация:</p>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-struct">struct</span> <span class="token class-name">S</span>
+<span class="token punctuation">{</span>
+    <span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">U</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">foo</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span><span class="token punctuation">}</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-void">void</span> <span class="token function">bar</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{</span>
+    S<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span> s<span class="token punctuation">;</span>
+    s<span class="token punctuation">.</span><span class="token keyword keyword-template">template</span> <span class="token generic-function"><span class="token function">foo</span><span class="token generic class-name"><span class="token operator">&lt;</span>T<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre><p>Без разреения неоднозначности первая треугольная скобка означала бы сравнение на меньше.</p>
+<h2 id="шаблоны-членов">Шаблоны членов </h2>
+<p>Рассмотрим простую задачку:</p>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-struct">struct</span> <span class="token class-name">Data</span>
+<span class="token punctuation">{</span>
+    <span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> T <span class="token function">read</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token keyword keyword-const">const</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-class">class</span> <span class="token class-name">DataReader</span>
+<span class="token punctuation">{</span>
+    <span class="token keyword keyword-const">const</span> T<span class="token operator">&amp;</span> source_<span class="token punctuation">;</span>
+
+<span class="token keyword keyword-public">public</span><span class="token operator">:</span>
+    <span class="token function">DataReader</span><span class="token punctuation">(</span><span class="token keyword keyword-const">const</span> T<span class="token operator">&amp;</span> s<span class="token punctuation">)</span><span class="token operator">:</span> <span class="token function">source_</span><span class="token punctuation">(</span>s<span class="token punctuation">)</span><span class="token punctuation">{</span><span class="token punctuation">}</span>
+
+    <span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">R</span><span class="token operator">&gt;</span> R <span class="token function">read</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// вызывает source_.read()</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token comment">// Тут необходимо написать определение для DataReader::read</span>
+
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">R</span><span class="token operator">&gt;</span>
+R <span class="token class-name">DataReader</span><span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span><span class="token function">read</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{</span>
+    R res <span class="token operator">=</span> source_<span class="token punctuation">.</span><span class="token keyword keyword-template">template</span> <span class="token generic-function"><span class="token function">read</span><span class="token generic class-name"><span class="token operator">&lt;</span>R<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-return">return</span> res<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre><p>А теперь более сложная задача</p>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-class">class</span> <span class="token class-name">DataReader</span>
+<span class="token punctuation">{</span>
+<span class="token keyword keyword-const">const</span> T<span class="token operator">&amp;</span> source_<span class="token punctuation">;</span>
+
+<span class="token keyword keyword-public">public</span><span class="token operator">:</span>
+    <span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">R</span><span class="token operator">&gt;</span> R <span class="token function">read</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token comment">// тут необходимо написать специализацию </span>
+<span class="token comment">// для DataReader&lt;T&gt;::read&lt;string&gt;</span>
+</code></pre><p>Попытка решения</p>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token comment">// код не работает, он иллюстрирует возможный ход мыслей</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token operator">&gt;</span>
+string <span class="token class-name">DataReader</span><span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span><span class="token function">read</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token keyword keyword-const">const</span> 
+<span class="token punctuation">{</span>
+    string foo <span class="token operator">=</span> source_<span class="token punctuation">.</span><span class="token keyword keyword-template">template</span> <span class="token generic-function"><span class="token function">read</span><span class="token generic class-name"><span class="token operator">&lt;</span>string<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-return">return</span> foo<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre><p>Требуемая специализация невозможна, так как она означала бы частичную специализацию метода</p>
+<p>Если у нам есть конкретная структура Data, то можно написать полную специализацию для <code>DataReader&lt;Data&gt;::read&lt;string&gt;</code></p>
+<p>Пример полной специализации:</p>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-struct">struct</span> <span class="token class-name">Data</span> <span class="token punctuation">{</span>
+    <span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> T <span class="token function">read</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token keyword keyword-const">const</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T</span><span class="token operator">&gt;</span> <span class="token keyword keyword-class">class</span> <span class="token class-name">DataReader</span>
+<span class="token punctuation">{</span>
+    <span class="token keyword keyword-const">const</span> T<span class="token operator">&amp;</span> source_<span class="token punctuation">;</span>
+
+<span class="token keyword keyword-public">public</span><span class="token operator">:</span>
+    <span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">R</span><span class="token operator">&gt;</span> R <span class="token function">read</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token operator">&gt;</span>
+<span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token operator">&gt;</span>
+string DataReader<span class="token operator">&lt;</span>Data<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span><span class="token generic-function"><span class="token function">read</span><span class="token generic class-name"><span class="token operator">&lt;</span>string<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{</span>
+    <span class="token keyword keyword-return">return</span> source_<span class="token punctuation">.</span><span class="token keyword keyword-template">template</span> <span class="token generic-function"><span class="token function">read</span><span class="token generic class-name"><span class="token operator">&lt;</span>string<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre><h2 id="задача-параметризации-метода">Задача параметризации метода </h2>
+<pre data-role="codeBlock" data-info="c++" class="language-cpp c++"><code><span class="token keyword keyword-template">template</span><span class="token operator">&lt;</span><span class="token keyword keyword-typename">typename</span> <span class="token class-name">T1</span><span class="token punctuation">,</span> <span class="token keyword keyword-typename">typename</span> <span class="token class-name">T2</span><span class="token operator">&gt;</span> <span class="token keyword keyword-struct">struct</span> <span class="token class-name">A</span>
+<span class="token punctuation">{</span>
+    <span class="token keyword keyword-void">void</span> <span class="token function">func</span><span class="token punctuation">(</span><span class="token keyword keyword-void">void</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token comment">// Необходимо добиться следующего эффекта:</span>
+A<span class="token operator">&lt;</span><span class="token keyword keyword-int">int</span><span class="token punctuation">,</span> <span class="token keyword keyword-double">double</span><span class="token operator">&gt;</span> a<span class="token punctuation">;</span>
+A<span class="token operator">&lt;</span><span class="token keyword keyword-float">float</span><span class="token punctuation">,</span> <span class="token keyword keyword-double">double</span><span class="token operator">&gt;</span> b<span class="token punctuation">;</span>
+
+a<span class="token punctuation">.</span><span class="token function">func</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// for int</span>
+b<span class="token punctuation">.</span><span class="token function">func</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// for all</span>
+</code></pre><ul>
+<li>Тоесть параметризировать метод первым аргументом шаблона</li>
+<li>Задачу усложнает то, что частичная специализация метода невозможна.</li>
+</ul>
 
       </div>
       
