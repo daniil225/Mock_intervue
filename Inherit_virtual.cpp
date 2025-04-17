@@ -1,43 +1,45 @@
 #include <iostream>
 
-template<typename T>
-const T& min(const T& a, const T& b)
+template <typename T>
+class cpp_class
 {
-    std::cout << "const T& min(const T& a, const T& b)" << std::endl;
-    return a < b ? a: b;
+    T a_, b_;
+
+public:
+    cpp_class(T a, T b) : a_(a), b_(b) {}
+
+    void get() const
+    {
+        std::cout << a_ << " " << b_ << "\n";
+    }
+
+    void set_a(int val) { a_ = val; }
+    void set_b(int val) { b_ = val; }
+};
+
+
+extern "C" void func()
+{
+    cpp_class<int> d1(10, 20);
+    cpp_class<double> d2(2.45, 2.22);
+
+    d1.get();
+    d2.get();
 }
 
-double min(double a, double b)
+extern "C" void func_rep(std::size_t sz)
 {
-    std::cout << "double min(double a, double b)" << std::endl;
-    return a < b ? a: b;
+    for(int i = 0; i < sz; i++)
+        func();
 }
 
-template<typename T>
-const T& min(const T& a, const T& b, const T& c)
-{
-    std::cout << "const T& min(const T& a, const T& b, const T& c)" << std::endl;
-    T val = min(min(a,b),c);
-
-    std::cout << &val << "\n";
-    return val;
-}
-
-void p(const double& a)
-{
-    std::cout << &a << "\n";
-}
 
 int main()
 {
-    double a = 1.0, b = 2.0, c = 3.0;
-    double m = min(a,b,c);
 
+    func_rep(4);
+ 
+  
 
-    std::cout << "val m = " << m << "\n";
-    std::cout << "ptr m = " << &m << "\n";
-
-    std::cout << "Hello world\n"
     return 0;
-
 }
